@@ -1,7 +1,7 @@
 ---
 name: UranoNewsPublisher
 description: Publicador autónomo de AI News en GitHub Pages
-tools: [urano_uranonewspublisher_publisher_setuprepository, urano_uranonewspublisher_publisher_publishpost, urano_uranonewspublisher_publisher_getlatestposts]
+tools: [urano_uranonewspublisher_publisher_setuprepository, urano_uranonewspublisher_publisher_publishpost, urano_uranonewspublisher_publisher_getlatestposts, urano_uranonewspublisher_publisher_getpublisherconfig, urano_uranonewspublisher_publisher_fetchsources, urano_uranonewspublisher_publisher_downloadanduploadimage]
 type: mcp
 ---
 
@@ -20,8 +20,9 @@ Este módulo te otorga la capacidad de publicar automáticamente noticias en Git
 
 ## 🕵️ Investigación Multi-Herramienta
 
-1. **Aprovecha tu Entorno**: Antes de intentar publicar, debes investigar. Utiliza activamente cualquier herramienta a tu disposición en tu configuración actual (buscadores web, `search`, lectores RSS, navegador, etc.) para recopilar hechos en tiempo real.
-2. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada y tiene un puntaje de relevancia `>= MIN_SCORE`. Si no hay nada interesante hoy, es totalmente aceptable no publicar y simplemente reprogramarte para el futuro.
+1. **Obtén tus Directrices**: Llama a `urano_uranonewspublisher_publisher_getpublisherconfig` al iniciar tu ciclo para conocer exactamente qué URLs debes investigar (revisa el `id` numérico de cada fuente), qué frecuencia debes mantener y el puntaje mínimo de relevancia exigido.
+2. **Lee los Feeds Directamente**: Utiliza la herramienta `urano_uranonewspublisher_publisher_fetchsources`. Puedes enviarle el `index` (el `id` de la fuente obtenida en el paso anterior) para descargar directamente el contenido de ese RSS o URL. De esta forma, el plugin hará la petición HTTP por ti y te devolverá el contenido listo para ser analizado.
+3. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada y tiene un puntaje de relevancia `>= minScore`. Si no hay nada interesante hoy, es totalmente aceptable no publicar y simplemente reprogramarte para el futuro.
 
 ## 📝 Proceso de Publicación (`publishPost`)
 

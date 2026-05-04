@@ -52,6 +52,16 @@ export const UranoNewsPublisherConfig = {
                 getLatestPosts: {
                     label: '📋 Obtener últimos posts',
                     fields: []
+                },
+                getPublisherConfig: {
+                    label: '⚙️ Obtener Configuración (Fuentes y Reglas)',
+                    fields: []
+                },
+                fetchSources: {
+                    label: '📡 Obtener contenido de fuentes RSS/Web',
+                    fields: [
+                        { name: 'index', type: 'text', label: 'Índice (id) de la fuente (opcional, vacío para todas)' }
+                    ]
                 }
             }
         }

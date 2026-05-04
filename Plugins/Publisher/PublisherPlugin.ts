@@ -8,9 +8,11 @@ export class PublisherPlugin {
     }
 
     async executeAction(action: string, payload: any) {
-        if (action === 'setupRepository') return await this.setupRepository();
-        if (action === 'publishPost') return await this.publishPost(payload);
-        if (action === 'getLatestPosts') return await this.getLatestPosts();
+        if (action === 'apiSetupRepository') return await this.apiSetupRepository();
+        if (action === 'apiPublishPost') return await this.apiPublishPost(payload);
+        if (action === 'apiGetLatestPosts') return await this.apiGetLatestPosts();
+        if (action === 'apiGetPublisherConfig') return await this.apiGetPublisherConfig();
+        if (action === 'apiFetchSources') return await this.apiFetchSources(payload);
         throw new Error(`Action ${action} no encontrada`);
     }
 
@@ -103,7 +105,7 @@ export class PublisherPlugin {
         }
     }
 
-    private async setupRepository() {
+    private async apiSetupRepository() {
         // Inicializa el data/posts.json vacio si no existe
         const { posts } = await this.getPostsJson();
         if (posts.length === 0) {
@@ -113,13 +115,59 @@ export class PublisherPlugin {
         return "El repositorio ya está configurado y contiene data/posts.json.";
     }
 
-    private async getLatestPosts() {
+    private async apiGetLatestPosts() {
         const { posts } = await this.getPostsJson();
         // Ordenamos por fecha descendente
         return posts.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
     }
 
-    private async publishPost(payload: any) {
+    private async apiGetPublisherConfig() {
+        const rawSources = this.config.SOURCES ? this.config.SOURCES.split('\n').filter((s: string) => s.trim() !== '') : [];
+        const sourcesWithIndex = rawSources.map((url: string, index: number) => ({ id: index, url }));
+        return {
+            sources: sourcesWithIndex,
+            frequency: this.config.FREQUENCY,
+            minScore: this.config.MIN_SCORE
+        };
+    }
+
+    private async apiFetchSources(payload: any) {
+        const { index } = payload;
+        const { sources } = await this.apiGetPublisherConfig();
+
+        let targetSources = sources;
+        // Si el agente envía un índice, filtramos para buscar solo esa fuente
+        if (index !== undefined && index !== null && index !== '') {
+            const idx = parseInt(index, 10);
+            const source = sources.find((s: any) => s.id === idx);
+            if (source) {
+                targetSources = [source];
+            } else {
+                throw new Error(`Fuente con id ${index} no encontrada.`);
+            }
+        }
+
+        const results = [];
+        for (const source of targetSources) {
+            try {
+                const response = await fetch(source.url);
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                const text = await response.text();
+                // Retornamos el texto del feed/página truncado a un tamaño razonable para el LLM
+                results.push({
+                    id: source.id,
+                    url: source.url,
+                    content: text.length > 20000 ? text.substring(0, 20000) + '... [TRUNCATED]' : text
+                });
+            } catch (error: any) {
+                results.push({ id: source.id, url: source.url, error: error.message });
+            }
+        }
+
+        return results;
+    }
+
+    private async apiPublishPost(payload: any) {
         const { title, date, categories, excerpt, content, imageUrl, source, originalUrl } = payload;
 
         let localImageUrl = null;
