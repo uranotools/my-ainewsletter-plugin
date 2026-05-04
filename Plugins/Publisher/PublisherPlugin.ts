@@ -33,7 +33,7 @@ export class PublisherPlugin {
         try {
             // Utilizamos el tool de GitHub para obtener el archivo
             const response = await this.callGitHub('getFileContents', {
-                path: 'data/posts.json'
+                path: 'public/data/posts.json'
             });
 
             // La respuesta de GitHub MCP suele venir en un formato específico, extraemos el contenido.
@@ -68,7 +68,7 @@ export class PublisherPlugin {
         const content = JSON.stringify(posts, null, 2);
 
         const payload: any = {
-            path: 'data/posts.json',
+            path: 'public/data/posts.json',
             message: `Update posts.json with new articles`,
             content: content
         };
