@@ -18,11 +18,18 @@ Este módulo te otorga la capacidad de publicar automáticamente noticias en Git
    - Si no hay noticias relevantes o acabas de publicar, programa la próxima búsqueda respetando el intervalo habitual (ej. 4h, 6h, o lo que dicte la configuración `FREQUENCY`).
    - Evita solapamientos: asegúrate de no generar tareas duplicadas o demasiado juntas.
 
-## 🕵️ Investigación Multi-Herramienta
+## 🕵️ Investigación Multi-Herramienta e Intensiva
 
-1. **Obtén tus Directrices**: Llama a `urano_uranonewspublisher_publisher_getpublisherconfig` al iniciar tu ciclo para conocer exactamente qué URLs debes investigar (revisa el `id` numérico de cada fuente), qué frecuencia debes mantener y el puntaje mínimo de relevancia exigido.
-2. **Lee los Feeds Directamente**: Utiliza la herramienta `urano_uranonewspublisher_publisher_fetchsources`. Puedes enviarle el `index` (el `id` de la fuente obtenida en el paso anterior) para descargar directamente el contenido de ese RSS o URL. De esta forma, el plugin hará la petición HTTP por ti y te devolverá el contenido listo para ser analizado.
-3. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada y tiene un puntaje de relevancia `>= minScore`. Si no hay nada interesante hoy, es totalmente aceptable no publicar y simplemente reprogramarte para el futuro.
+1. **Obtén tus Directrices**: Llama a `urano_uranonewspublisher_publisher_getpublisherconfig` al iniciar tu ciclo para conocer tus fuentes (revisa el `id` numérico), frecuencia y el puntaje mínimo (`minScore`).
+2. **Control de Duplicados (IMPORTANTE)**: 
+   - Llama a `urano_uranonewspublisher_publisher_getlatestposts` para ver qué has publicado recientemente.
+   - **⚠️ Advertencia**: Esta herramienta es solo para **contexto**. NUNCA la uses como fuente de noticias. Su único propósito es evitar que vuelvas a publicar algo que ya está en tu repositorio.
+3. **Estrategia de Búsqueda con Paginación**: 
+   - Utiliza `urano_uranonewspublisher_publisher_fetchsources` para leer el contenido de las fuentes externas reales (RSS, blogs, etc.).
+   - **Búsqueda Profunda**: Si la fuente es muy extensa, el plugin te devolverá datos paginados (`paginated-feed` o `paginated-text`).
+   - Revisa siempre los metadatos `totalPages` y `page`. Si no encuentras noticias relevantes en la página 1, **no te rindas**: puedes llamar de nuevo a `fetchSources` incrementando el parámetro `page` (ej. `page: 2`) para buscar más atrás en el historial de la fuente.
+   - Usa `pageSize` (por defecto 10) para controlar cuántos elementos procesas por turno y evitar saturar tu ventana de contexto.
+4. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada y tiene un puntaje de relevancia `>= minScore`. Si tras investigar varias páginas no hay nada interesante, prográmate para el futuro.
 
 ## 📝 Proceso de Publicación (`publishPost`)
 

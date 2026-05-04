@@ -146,12 +146,49 @@ export class PublisherPlugin {
         };
     }
 
+    private xmlToJSON(xml: string): any {
+        // Un convertidor genérico de XML a JSON (heurístico)
+        const result: any = {};
+        
+        // Limpiar comentarios y CDATA para simplificar
+        let cleanXml = xml.replace(/<!--[\s\S]*?-->/g, '');
+        cleanXml = cleanXml.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (match, p1) => p1.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+
+        // Función recursiva para procesar tags
+        const process = (str: string) => {
+            const obj: any = {};
+            const tagRegex = /<([^>/\s]+)([^>]*)>([\s\S]*?)<\/\1>/g;
+            let match;
+            let hasChildren = false;
+
+            while ((match = tagRegex.exec(str)) !== null) {
+                hasChildren = true;
+                const [_, tag, attrs, content] = match;
+                const childValue = process(content);
+                
+                if (obj[tag]) {
+                    if (!Array.isArray(obj[tag])) obj[tag] = [obj[tag]];
+                    obj[tag].push(childValue);
+                } else {
+                    obj[tag] = childValue;
+                }
+            }
+
+            if (!hasChildren) {
+                // Si no tiene hijos, devolver el texto limpio de HTML
+                return str.replace(/<[^>]*>?/gm, '').trim();
+            }
+            return obj;
+        };
+
+        return process(cleanXml);
+    }
+
     private async apiFetchSources(payload: any) {
-        const { index } = payload;
+        const { index, page = 1, pageSize = 10 } = payload;
         const { sources } = await this.apiGetPublisherConfig();
 
         let targetSources = sources;
-        // Si el agente envía un índice, filtramos para buscar solo esa fuente
         if (index !== undefined && index !== null && index !== '') {
             const idx = parseInt(index, 10);
             const source = sources.find((s: any) => s.id === idx);
@@ -168,11 +205,56 @@ export class PublisherPlugin {
                 const response = await fetch(source.url);
                 if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                 const text = await response.text();
-                // Retornamos el texto del feed/página truncado a un tamaño razonable para el LLM
+                
+                let content: any = text;
+                const pIndex = Math.max(1, parseInt(page, 10));
+                const pSize = parseInt(pageSize, 10);
+                
+                // Si es XML, lo convertimos y paginamos si es una lista
+                if (text.trim().startsWith('<?xml') || text.includes('<rss') || text.includes('<feed') || text.includes('</')) {
+                    try {
+                        const parsed = this.xmlToJSON(text);
+                        
+                        // Intentar encontrar la lista de items principal para paginar
+                        // RSS: channel.item, Atom: feed.entry
+                        let items = [];
+                        if (parsed.rss?.channel?.item) items = Array.isArray(parsed.rss.channel.item) ? parsed.rss.channel.item : [parsed.rss.channel.item];
+                        else if (parsed.feed?.entry) items = Array.isArray(parsed.feed.entry) ? parsed.feed.entry : [parsed.feed.entry];
+                        
+                        if (items.length > 0) {
+                            const start = (pIndex - 1) * pSize;
+                            const paginatedItems = items.slice(start, start + pSize);
+                            content = {
+                                type: 'paginated-feed',
+                                page: pIndex,
+                                totalItems: items.length,
+                                totalPages: Math.ceil(items.length / pSize),
+                                items: paginatedItems
+                            };
+                        } else {
+                            content = { type: 'structured-xml', data: parsed };
+                        }
+                    } catch (e) {
+                        console.error("Error convirtiendo XML:", e);
+                    }
+                } else {
+                    // Paginación por caracteres para texto plano largo
+                    const charLimit = 15000;
+                    if (text.length > charLimit) {
+                        const start = (pIndex - 1) * charLimit;
+                        content = {
+                            type: 'paginated-text',
+                            page: pIndex,
+                            totalChars: text.length,
+                            content: text.substring(start, start + charLimit) + (text.length > start + charLimit ? '... [CONTINUA EN SIGUIENTE PAGINA]' : '')
+                        };
+                    }
+                }
+
                 results.push({
                     id: source.id,
                     url: source.url,
-                    content: text.length > 20000 ? text.substring(0, 20000) + '... [TRUNCATED]' : text
+                    content: content
                 });
             } catch (error: any) {
                 results.push({ id: source.id, url: source.url, error: error.message });

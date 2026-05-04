@@ -51,7 +51,8 @@ export const UranoNewsPublisherConfig = {
                     ]
                 },
                 getLatestPosts: {
-                    label: '📋 Obtener últimos posts',
+                    label: '📜 Ver posts publicados (Contexto / Duplicados)',
+                    description: 'Obtiene el historial de noticias ya publicadas. ÚSALO SOLO PARA EVITAR DUPLICADOS. No es una fuente de noticias nuevas.',
                     fields: []
                 },
                 getPublisherConfig: {
@@ -61,7 +62,9 @@ export const UranoNewsPublisherConfig = {
                 fetchSources: {
                     label: '📡 Obtener contenido de fuentes RSS/Web',
                     fields: [
-                        { name: 'index', type: 'text', label: 'Índice (id) de la fuente (opcional, vacío para todas)' }
+                        { name: 'index', type: 'text', label: 'Índice (id) de la fuente (opcional, vacío para todas)' },
+                        { name: 'page', type: 'number', label: 'Número de página (opcional, por defecto 1)' },
+                        { name: 'pageSize', type: 'number', label: 'Elementos por página (opcional, por defecto 10)' }
                     ]
                 }
             }
