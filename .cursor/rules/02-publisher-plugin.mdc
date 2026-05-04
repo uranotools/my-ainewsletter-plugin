@@ -1,0 +1,15 @@
+---
+rule:
+  type: always
+  description: "Reglas específicas del PublisherPlugin"
+---
+
+**Cuando trabajes en PublisherPlugin.ts:**
+
+- El método principal es `publishPost(payload)`
+- Debes implementar:
+  - `getPostsJson()` → leer `data/posts.json`
+  - `savePostsJson(posts)` → guardar el array actualizado
+  - `downloadAndUploadImage(imageUrl, targetPath)` → descargar y subir imagen
+- Usa `this.callGitHub(...)` para todas las llamadas al GitHub MCP.
+- Mantén el código limpio y con buenos comentarios.

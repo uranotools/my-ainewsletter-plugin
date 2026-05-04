@@ -1,0 +1,18 @@
+---
+rule:
+  type: always
+  description: "Contexto principal del plugin UranoNewsPublisher"
+---
+
+**PROYECTO ACTUAL:** UranoNewsPublisher MCP
+
+Este es un **plugin MCP para Urano Desktop**.
+
+**Reglas obligatorias para cualquier tarea:**
+
+- Solo modificas código dentro de `Plugins/Publisher/PublisherPlugin.ts`, `config.ts` y `SKILL.md`.
+- Siempre respeta el contrato de la acción `publishPost`.
+- Usa el GitHub MCP existente (`callGitHub` method) para todas las operaciones de GitHub.
+- Nunca hardcodees tokens ni credenciales.
+- Mantén el plugin lo más simple posible.
+- Lee siempre `docs/CREATE_MCP_GUIDE.md` y `SKILL.md` antes de proponer cambios.
