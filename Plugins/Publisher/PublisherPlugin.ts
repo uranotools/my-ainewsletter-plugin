@@ -1,3 +1,5 @@
+import * as zlib from 'zlib';
+
 export class PublisherPlugin {
     private config: any;
     private readonly REPO_OWNER = 'uranotools';
@@ -36,29 +38,45 @@ export class PublisherPlugin {
                 path: 'public/data/posts.json'
             });
 
-            // La respuesta de GitHub MCP suele venir en un formato específico, extraemos el contenido.
+            // El servidor MCP suele entregarnos el contenido ya decodificado como string
             let content = '';
             let sha = null;
+
             if (response && response.content) {
-                // Puede que esté en base64 u otro formato
                 content = response.content;
                 sha = response.sha;
+                
+                // Si por alguna razón el contenido viene como buffer binario o GZIP
+                if (typeof content === 'string' && content.startsWith('\x1f\x8b')) {
+                    try {
+                        const buffer = Buffer.from(content, 'binary');
+                        content = zlib.gunzipSync(buffer).toString('utf-8');
+                    } catch (e) {
+                        console.error("Error descomprimiendo GZIP:", e);
+                    }
+                }
             } else if (typeof response === 'string') {
                 content = response;
-            } else if (response && response.fileContent) {
-                content = response.fileContent;
-                sha = response.sha;
             }
 
-            // Limpiamos y parseamos
-            if (!content) {
+            if (!content || content.trim() === '') {
                 return { posts: [], sha: null };
             }
 
-            const parsed = JSON.parse(content);
-            return { posts: Array.isArray(parsed) ? parsed : [], sha };
+            try {
+                const parsed = JSON.parse(content);
+                return { posts: Array.isArray(parsed) ? parsed : [], sha };
+            } catch (e) {
+                console.error("Error crítico parseando JSON de GitHub:", e);
+                throw new Error(`El archivo posts.json no es un JSON válido. Cancelo la operación para evitar pérdida de datos.`);
+            }
         } catch (error) {
-            // Si el archivo no existe, retornamos un array vacío
+            // Si es un error de "archivo no encontrado", podemos retornar vacío.
+            // Pero si es el error que acabamos de lanzar arriba, debemos relanzarlo.
+            if (error.message.includes('corrupto') || error.message.includes('válido')) {
+                throw error;
+            }
+            
             console.error("Error al obtener posts.json:", error);
             return { posts: [], sha: null };
         }
@@ -165,7 +183,15 @@ export class PublisherPlugin {
     }
 
     private async apiPublishPost(payload: any) {
-        const { title, date, categories, excerpt, content, imageUrl, source, originalUrl } = payload;
+        // Mapeo robusto de parámetros (el LLM a veces usa sinónimos)
+        const title = payload.title;
+        const date = payload.date || payload.publishedAt || new Date().toISOString().split('T')[0];
+        const rawCategories = payload.categories || (Array.isArray(payload.tags) ? payload.tags.join(',') : payload.tags) || "";
+        const excerpt = payload.excerpt || payload.summary || "";
+        const content = payload.content || payload.body || "";
+        const imageUrl = payload.imageUrl || payload.image || null;
+        const source = payload.source || (Array.isArray(payload.sourceUrls) ? payload.sourceUrls[0] : payload.sourceUrls) || "";
+        const originalUrl = payload.originalUrl || payload.url || source;
 
         let localImageUrl = null;
 
@@ -185,7 +211,7 @@ export class PublisherPlugin {
             id: Date.now().toString(),
             title,
             date,
-            categories: categories ? categories.split(',').map((c: string) => c.trim().toLowerCase()) : [],
+            categories: typeof rawCategories === 'string' ? rawCategories.split(',').map((c: string) => c.trim().toLowerCase()) : [],
             excerpt,
             content,
             imageUrl: localImageUrl || imageUrl, // usa local si se descargó, o la remota como fallback
