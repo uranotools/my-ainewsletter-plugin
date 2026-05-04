@@ -15,6 +15,7 @@ export class PublisherPlugin {
         if (action === 'apiGetLatestPosts') return await this.apiGetLatestPosts();
         if (action === 'apiGetPublisherConfig') return await this.apiGetPublisherConfig();
         if (action === 'apiFetchSources') return await this.apiFetchSources(payload);
+        if (action === 'apiVerifySource') return await this.apiVerifySource(payload);
         throw new Error(`Action ${action} no encontrada`);
     }
 
@@ -182,6 +183,82 @@ export class PublisherPlugin {
         };
 
         return process(cleanXml);
+    }
+
+    private async apiVerifySource(payload: { url: string }) {
+        const { url } = payload;
+        if (!url) throw new Error('El parámetro "url" es requerido.');
+        
+        try {
+            console.log(`[Publisher] Verificando fuente con visión y metadatos: ${url}`);
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+                }
+            });
+            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+            const html = await response.text();
+            
+            let cheerio;
+            try {
+                cheerio = require('cheerio');
+            } catch (e) {
+                console.error("[Publisher] cheerio not found in paths:", e);
+                throw new Error("El motor de análisis (cheerio) no está disponible en este entorno. Por favor, contacta al administrador.");
+            }
+            const $ = cheerio.load(html);
+            
+            // Extraer metadatos clave para evitar alucinaciones de fecha
+            const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || '';
+            const description = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '';
+            
+            // Estrategia multi-tag para encontrar la fecha real de publicación
+            const publishDate = $('meta[property="article:published_time"]').attr('content') || 
+                                $('meta[name="pubdate"]').attr('content') || 
+                                $('meta[name="publish-date"]').attr('content') ||
+                                $('meta[name="date"]').attr('content') ||
+                                $('time[datetime]').attr('datetime') || 
+                                $('time').text().trim() || '';
+                                
+            const ogImage = $('meta[property="og:image"]').attr('content') || null;
+            
+            // Intentar detectar fecha en el texto si no hay meta tags (heurística simple)
+            let inferredDate = publishDate;
+            if (!inferredDate) {
+                const dateMatch = html.match(/\d{4}[-/]\d{2}[-/]\d{2}/) || html.match(/\d{1,2} [a-zA-Z]+ \d{4}/);
+                if (dateMatch) inferredDate = `[Detectado en texto]: ${dateMatch[0]}`;
+            }
+
+            const metadata = {
+                title,
+                description,
+                publishDate: inferredDate || "No detectada (Ten cuidado con la antigüedad)",
+                url,
+                hasOgImage: !!ogImage
+            };
+
+            // Si hay imagen, la descargamos para enviarla como parte de visión (Pattern B de Urano)
+            if (ogImage && ogImage.startsWith('http')) {
+                try {
+                    const imgRes = await fetch(ogImage);
+                    if (imgRes.ok) {
+                        const buffer = Buffer.from(await imgRes.arrayBuffer());
+                        return {
+                            metadata,
+                            base64: buffer.toString('base64'),
+                            mimeType: imgRes.headers.get('content-type') || 'image/jpeg'
+                        };
+                    }
+                } catch (e) {
+                    console.warn("[Publisher] Falló la descarga de og:image para visión:", e);
+                }
+            }
+
+            return metadata;
+        } catch (error: any) {
+            console.error("[Publisher] Error en apiVerifySource:", error);
+            return { error: error.message, url };
+        }
     }
 
     private async apiFetchSources(payload: any) {

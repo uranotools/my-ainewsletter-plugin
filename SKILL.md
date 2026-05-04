@@ -1,13 +1,13 @@
 ---
 name: UranoNewsPublisher
 description: Publicador autónomo de AI News en GitHub Pages
-tools: [urano_uranonewspublisher_publisher_setuprepository, urano_uranonewspublisher_publisher_publishpost, urano_uranonewspublisher_publisher_getlatestposts, urano_uranonewspublisher_publisher_getpublisherconfig, urano_uranonewspublisher_publisher_fetchsources, urano_uranonewspublisher_publisher_downloadanduploadimage]
+tools: [urano_uranonewspublisher_publisher_setuprepository, urano_uranonewspublisher_publisher_publishpost, urano_uranonewspublisher_publisher_getlatestposts, urano_uranonewspublisher_publisher_getpublisherconfig, urano_uranonewspublisher_publisher_fetchsources, urano_uranonewspublisher_publisher_downloadanduploadimage, urano_uranonewspublisher_publisher_verifysource]
 type: mcp
 ---
 
 # Skill: Urano News Publisher & Periodista Autónomo
 
-Este módulo te otorga la capacidad de publicar automáticamente noticias en GitHub Pages operando en un ciclo continuo. Tu estilo de redacción, tono y comportamiento específico como periodista dependerán estrictamente de las reglas preconfiguradas en tu **System Prompt** principal.
+Este módulo te otorga la capacidad de publicar automáticamente noticias en GitHub Pages operando en un ciclo continuo. Tu estilo de redacción, tono y comportamiento específico como periodista dependerán estrictamente de las reglas preconfiguadas en tu **System Prompt** principal.
 
 ## 🔄 Ciclo de Vida Autónomo (Regla de Oro)
 
@@ -29,7 +29,13 @@ Este módulo te otorga la capacidad de publicar automáticamente noticias en Git
    - **Búsqueda Profunda**: Si la fuente es muy extensa, el plugin te devolverá datos paginados (`paginated-feed` o `paginated-text`).
    - Revisa siempre los metadatos `totalPages` y `page`. Si no encuentras noticias relevantes en la página 1, **no te rindas**: puedes llamar de nuevo a `fetchSources` incrementando el parámetro `page` (ej. `page: 2`) para buscar más atrás en el historial de la fuente.
    - Usa `pageSize` (por defecto 10) para controlar cuántos elementos procesas por turno y evitar saturar tu ventana de contexto.
-4. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada y tiene un puntaje de relevancia `>= minScore`. Si tras investigar varias páginas no hay nada interesante, prográmate para el futuro.
+4. **Verificación de Fecha y Visión (Anti-Anacronismos)**:
+   - **Obligatorio**: Antes de redactar, usa `urano_uranonewspublisher_publisher_verifysource` con la URL de la noticia.
+   - Esta herramienta te devolverá la fecha de publicación real (metadata) y la imagen principal del artículo (`og:image`). 
+   - **Multimodalidad**: Si tu modelo soporta visión, podrás "ver" la imagen de la noticia para corroborar su autenticidad y estilo.
+   - **Regla Estricta**: Si la fecha detectada es superior a 48 horas (y no es un análisis atemporal relevante), DESCARTA la noticia. No publiques noticias viejas como si fueran de hoy.
+5. **Validación de Enlaces**: Usa `urano_verify_link` para confirmar que la URL sigue viva antes de citarla.
+6. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada, reciente y tiene un puntaje de relevancia `>= minScore`.
 
 ## 📝 Proceso de Publicación (`publishPost`)
 

@@ -66,6 +66,21 @@ export const UranoNewsPublisherConfig = {
                         { name: 'page', type: 'number', label: 'Número de página (opcional, por defecto 1)' },
                         { name: 'pageSize', type: 'number', label: 'Elementos por página (opcional, por defecto 10)' }
                     ]
+                },
+                verifySource: {
+                    label: '🔍 Verificar Fuente (Visión y Metadatos)',
+                    description: 'Analiza una URL para extraer su fecha de publicación real, metadatos y una imagen visual (OG Image). Úsalo SIEMPRE para evitar publicar noticias antiguas o alucinadas.',
+                    fields: [
+                        { name: 'url', type: 'required', label: 'URL de la noticia a verificar' }
+                    ]
+                },
+                downloadAndUploadImage: {
+                    label: '🖼️ Descargar y Subir Imagen',
+                    description: 'Descarga una imagen desde una URL y la sube al repositorio de GitHub en la carpeta assets/images.',
+                    fields: [
+                        { name: 'imageUrl', type: 'required', label: 'URL remota de la imagen' },
+                        { name: 'targetPath', type: 'required', label: 'Ruta de destino en el repo (ej: assets/images/foto.jpg)' }
+                    ]
                 }
             }
         }
