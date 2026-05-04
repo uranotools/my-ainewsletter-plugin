@@ -3,6 +3,7 @@ export const UranoNewsPublisherConfig = {
     description: "Publicador autónomo de newsletters de IA en GitHub Pages. Usa el GitHub MCP existente.",
     icon: "Newspaper",
     category: 'Utilidades',
+    enabledPlugins: ['Publisher'],
     settings: [
         {
             name: 'SOURCES',

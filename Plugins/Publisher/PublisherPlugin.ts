@@ -17,12 +17,9 @@ export class PublisherPlugin {
     }
 
     private async callGitHub(action: string, data: any = {}) {
-        const { CoreFactory } = await import('@core/CoreFactory');
-        const pm = await CoreFactory.getPluginManager();
-
-        return await pm.executeAction(
-            'GitHub',                    // Nombre del MCP de GitHub
-            'GitHubPlugin',              // Ajustar según el nombre real del plugin de GitHub
+        return await this.config._callPlugin(
+            'GitHub',         // Nombre del módulo MCP de GitHub
+            'Issues',   // Nombre de la clase del plugin
             action,
             {
                 owner: this.REPO_OWNER,
