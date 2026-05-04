@@ -4,6 +4,12 @@ Bienvenido al plugin **UranoNewsPublisher**, un módulo diseñado específicamen
 
 Este plugin permite que un Agente de Urano investigue noticias, redacte artículos en formato Markdown y los publique automáticamente en un sitio estático (como GitHub Pages) utilizando un flujo de trabajo profesional y desacoplado.
 
+### 🚀 Una Nueva Era para Escritores de Newsletters
+Este plugin abre las puertas a que miles de escritores y creadores de contenido puedan conectar sus conocimientos con la potencia de la IA. Al lanzar un **Agente Autónomo en Urano Desktop**, cualquier escritor puede:
+*   **Delegar la Curaduría**: Dejar que la IA filtre las noticias más relevantes según su criterio experto configurado en el System Prompt.
+*   **Publicación Ininterrumpida**: El agente se mantiene "corriendo" de forma autónoma, convirtiéndose en un póster incansable que mantiene la newsletter activa 24/7.
+*   **Escalabilidad**: Un solo escritor puede supervisar múltiples agentes (newsletters) de nichos distintos, todos operando de forma independiente.
+
 ---
 
 ## 🏗️ Estructura del Proyecto
