@@ -1,0 +1,69 @@
+# 📰 UranoNewsPublisher MCP Plugin
+
+Bienvenido al plugin **UranoNewsPublisher**, un módulo diseñado específicamente para integrarse con [Urano Desktop](https://github.com/uranotools/UranoDesktop) y permitir la creación de newsletters autónomas impulsadas por IA.
+
+Este plugin permite que un Agente de Urano investigue noticias, redacte artículos en formato Markdown y los publique automáticamente en un sitio estático (como GitHub Pages) utilizando un flujo de trabajo profesional y desacoplado.
+
+---
+
+## 🏗️ Estructura del Proyecto
+
+El plugin sigue la arquitectura estándar de Urano MCP:
+
+```text
+my-ainewsletter-plugin/
+├── 📄 config.ts                 # Manifiesto y esquemas de herramientas
+├── 📄 SKILL.md                  # Instrucciones narrativas para el Agente (System Prompt)
+├── 📄 package.json              # Metadatos del plugin
+├── 📁 Plugins/
+│   └── 📁 Publisher/
+│       └── 📄 PublisherPlugin.ts # Lógica principal (Interacción con GitHub y procesamiento)
+└── 📁 docs/                     # Documentación técnica adicional
+```
+
+---
+
+## 🧠 Lógica de Funcionamiento
+
+El plugin no funciona de forma aislada, sino que actúa como un puente inteligente:
+
+1.  **Investigación**: El Agente utiliza sus herramientas de búsqueda (o las `SOURCES` configuradas) para encontrar noticias relevantes.
+2.  **Procesamiento**: El Agente redacta el post siguiendo el tono configurado en su System Prompt.
+3.  **Publicación**: Se invoca la acción `publishPost`, la cual:
+    *   Descarga imágenes externas y las sube al repositorio de GitHub (`assets/images/`).
+    *   Actualiza el archivo central de datos `data/posts.json` mediante el **GitHub MCP** de Urano.
+    *   Retorna la URL final del sitio para confirmar la publicación.
+4.  **Ciclo Autónomo**: Mediante la instrucción `schedule_next_action` definida en el `SKILL.md`, el agente se reprograma para su próxima jornada laboral sin intervención humana.
+
+---
+
+## 💡 Ideas de Newsletter que puedes crear
+
+Gracias a la flexibilidad de Urano, puedes configurar diferentes agentes para distintos nichos:
+
+*   **IA Daily Digest**: Resumen diario de los últimos papers en ArXiv y lanzamientos en Twitter/X.
+*   **Crypto Journalist**: Un agente que monitorea precios y noticias de blockchain para publicar alertas y resúmenes.
+*   **Tech Curator**: Una newsletter que solo publica noticias sobre lenguajes de programación específicos (Rust, Go, TypeScript).
+*   **Local News Bot**: Un agente enfocado en recopilar y resumir noticias de una ciudad o región específica.
+
+---
+
+## 🛠️ Datos Técnicos para Desarrolladores
+
+*   **Integración GitHub**: Este plugin requiere que el módulo **GitHub MCP** esté instalado y configurado en Urano Desktop. Utiliza el puente dinámico `pm.executeAction('GitHub', ...)` para evitar manejar tokens de forma manual.
+*   **Almacenamiento**: Los posts se guardan en un array JSON. Esto facilita el consumo desde cualquier frontend (React, Vue, Astro) que simplemente lea un archivo estático.
+*   **Imágenes**: El plugin maneja la persistencia de imágenes convirtiéndolas a `base64` durante la subida para asegurar que el contenido nunca se rompa por enlaces externos caídos.
+*   **Hooks de Urano**: Utiliza el protocolo de `type: mcp` en `SKILL.md` para inyectar las reglas de periodismo directamente en el contexto del agente.
+
+---
+
+## 🚀 Instalación en Urano
+
+1.  Clona este repositorio o descarga el ZIP.
+2.  En Urano Desktop, ve a **Integraciones > MCP Manager > Desarrollador**.
+3.  Haz clic en **Vincular Carpeta Local** y selecciona esta carpeta.
+4.  ¡Listo! Tu agente ahora tiene las herramientas `urano_uranonewspublisher_...`.
+
+---
+
+Desarrollado con ❤️ por la comunidad de [UranoTools](https://uranoai.com).
