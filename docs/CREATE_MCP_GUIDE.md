@@ -192,25 +192,26 @@ Si desarrollas una herramienta MCP que lanza procesos de fondo, abre sub-pestañ
 ```typescript
 // Desde tu archivo MyPlugin.ts
 public async apiEjecutarTarea(payload: any) {
-    const { CoreFactory } = await import('@core/CoreFactory');
-    const manager = await CoreFactory.getSessionManager();
-    const session = manager.get(payload.sessionId);
-    
-    if (session) {
-        const badges = session.metadata.badges || [];
-        // Evitar duplicados
-        if (!badges.some(b => b.id === 'mi-reporte')) {
-            badges.push({
+    // [IMPORTANTE] Evita importar @core directamente en plugins externos/workspace
+    // ya que los alias de ruta no se resuelven fuera del entorno compilado de Urano.
+    // En su lugar, usa la capacidad inyectada por el sistema en this.config._callPlugin.
+
+    await this.config._callPlugin(
+        'Core',              // Módulo destino
+        'SessionManager',    // O la abstracción que necesites
+        'updateBadge',       // Acción específica
+        {
+            sessionId: payload.sessionId,
+            badge: {
                 id: 'mi-reporte',
                 label: 'Abrir Reporte Generado',
                 icon: '📊',
-                color: 'success', // 'default' | 'info' | 'success' | 'warning' | 'error'
+                color: 'success',
                 actionRoute: '/module/MyPlugin/plugins/Report/apiAbrirReporte',
                 actionData: { reportId: '123' }
-            });
-            await manager.updateSessionMetadata(payload.sessionId, { badges });
+            }
         }
-    }
+    );
     
     return { success: true };
 }
@@ -461,11 +462,9 @@ Si tu plugin necesita mostrar un dashboard, una gráfica o una presentación, de
 ```typescript
 // Plugins/Visualization/VizPlugin.ts
 public async apiRenderDashboard(payload: { data: any, sessionId: string }) {
-    const { CoreFactory } = await import('@core/CoreFactory');
-    const pluginManager = await CoreFactory.getPluginManager();
-    
-    // Invocamos el plugin de MultiverseTabs directamente
-    await pluginManager.executeAction('MultiverseTabs', 'Tabs', 'generatedynamicui', {
+    // Invocamos el plugin de MultiverseTabs utilizando el helper inyectado
+    // Esto garantiza compatibilidad tanto en modo Dev como en Producción.
+    await this.config._callPlugin('MultiverseTabs', 'Tabs', 'generatedynamicui', {
         sessionId: payload.sessionId,
         purpose: 'dashboard-analytics',
         spec: {
@@ -550,41 +549,60 @@ Al cumplir este estándar, no importa si tu tool es MCP o Nativo: el motor de Ur
 
 ## 🎨 Extensión de UI: Session Badges
 
-Para módulos MCP que generan documentos o abren contextos externos, se recomienda utilizar el **API de Session Badges** (`badges: SessionBadge[]` en `SessionMetadata`). Esto permite inyectar botones nativos interactivos de acceso rápido directamente en la conversación del usuario, permitiendo a tu MCP desencadenar rutas IPC sin interacción adicional del LLM. Consulta la guía técnica de desarrollo para ejemplos de código.
+Para módulos MCP que generan documentos o abren contextos externos, se recomienda utilizar el **API de Session Badges**. Esto permite inyectar botones nativos interactivos de acceso rápido directamente en la conversación del usuario. 
+
+Sin embargo, dado que los plugins externos no deben importar `@core`, deben realizar esta actualización a través de `_callPlugin` (ver sección siguiente).
 
 ---
 
-## 🔌 Uso de Funciones Nativas (@core)
+## 🔌 Limitaciones de Imports y el Patrón Inyectado
 
-Los módulos MCP en Urano Desktop no están limitados a responder al LLM; tienen acceso total a las capacidades del sistema operativo y del motor de Urano a través del alias `@core`.
+Los módulos MCP en Urano Desktop no están limitados a responder al LLM; tienen acceso a las capacidades del motor de Urano. Sin embargo, existe una distinción crítica entre módulos **Nativos** y módulos **Externos (Workspace)**.
 
-### Importación Centralizada
-A partir de la versión v2.2, puedes importar los servicios principales desde el index del core:
+### 🔌 Accediendo a `@core` en Plugins Externos
+
+A diferencia de versiones anteriores, **SÍ puedes utilizar importaciones directas de `@core`** en tus plugins externos. Dado que Urano registra `module-alias` a nivel global en la aplicación principal, cualquier llamado a `require('@core/...')` funcionará nativamente sin importar en qué directorio de tu computadora resida tu plugin.
+
+Sin embargo, para que esto funcione correctamente en tu entorno de desarrollo (sin que TypeScript lance errores por no encontrar el código fuente de Urano), debes realizar dos configuraciones clave:
+
+1. **Silenciar los Errores de TypeScript (Opcional pero recomendado)**: Como instalaste Urano vía `.exe` y no tienes el repositorio fuente localmente, VSCode subrayará `@core` en rojo. Para solucionarlo, crea un archivo `urano.d.ts` en la raíz de tu proyecto MCP con este contenido básico:
+   ```typescript
+   declare module '@core/PluginBase' {
+       export class PluginBase { constructor(config: any); }
+   }
+   declare module '@core/Security/Vault' {
+       export class Vault { static getSecret(module: string, key: string): string; }
+   }
+   declare module '@core/Router' {
+       export const Router: any;
+   }
+   ```
+   *(También puedes simplemente usar `// @ts-ignore` arriba de tus imports).*
+
+2. **Excluir `@core` en esbuild (OBLIGATORIO)**: Es crítico indicarle a `esbuild` que **NO** intente empaquetar `@core` en tu ZIP, ya que estas clases serán provistas por el ejecutable de Urano en tiempo de ejecución. Añade el flag `--external:@core/*`:
+   ```bash
+   npx esbuild config.ts Plugins/**/*.ts --bundle --platform=node --outdir=dist --format=cjs --external:@core/*
+   ```
+
+Gracias a este patrón, puedes importar clases nativas de forma limpia:
+`import { PluginBase } from '@core/PluginBase';`
+`import { Vault } from '@core/Security/Vault';`
+
+### 🔀 Comunicación entre Plugins Externos (`_callPlugin`)
 
 ```typescript
-import { NotificationService, AIManager, CoreFactory } from '@core';
-```
+constructor(moduleConfig: any) {
+    this.config = moduleConfig;
+    // this.config._callPlugin ahora está disponible
+}
 
-### Ejemplo: Notificación de Fin de Proceso
-Si tu MCP ejecuta una tarea que tarda varios segundos/minutos (ej: exportar una base de datos), puedes notificar al usuario nativamente cuando termine, permitiéndole volver al chat con un clic:
-
-```typescript
-async apiExportData(payload: { format: string }) {
-    // 1. Ejecutar tarea pesada...
-    const result = await this.longRunningTask(payload.format);
-
-    // 2. Notificar nativamente al usuario
-    // El sistema automáticamente enfocará la ventana correcta al hacer clic
-    await NotificationService.send(
-        "Exportación Completa", 
-        `Tu archivo ${payload.format} está listo para descargar.`,
-        {
-            sessionId: this.sessionId, // Permite volver a este chat específico
-            isMiniChat: this.isMiniChat // Detecta si debe abrir la burbuja o el Dashboard
-        }
+private async callOtherPlugin(targetModule, targetPlugin, action, data) {
+    return await this.config._callPlugin(
+        targetModule, 
+        targetPlugin, 
+        action, 
+        data
     );
-
-    return { success: true, fileUrl: result.url };
 }
 ```
 

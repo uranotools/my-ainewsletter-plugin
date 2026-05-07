@@ -4,9 +4,14 @@ export class PublisherPlugin {
     private config: any;
     private readonly REPO_OWNER = 'uranotools';
     private readonly REPO_NAME = 'my-ainewsletter-template';
+    private readonly OG_IMAGE_SITES = ['github.com', 'twitter.com', 'x.com', 'linkedin.com', 'npm.com', 'openai.com'];
 
     constructor(moduleConfig: any) {
         this.config = moduleConfig;
+    }
+
+    private sleep(ms: number) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     async executeAction(action: string, payload: any) {
@@ -46,7 +51,7 @@ export class PublisherPlugin {
             if (response && response.content) {
                 content = response.content;
                 sha = response.sha;
-                
+
                 // Si por alguna razón el contenido viene como buffer binario o GZIP
                 if (typeof content === 'string' && content.startsWith('\x1f\x8b')) {
                     try {
@@ -77,7 +82,7 @@ export class PublisherPlugin {
             if (error.message.includes('corrupto') || error.message.includes('válido')) {
                 throw error;
             }
-            
+
             console.error("Error al obtener posts.json:", error);
             return { posts: [], sha: null };
         }
@@ -108,12 +113,11 @@ export class PublisherPlugin {
 
             const arrayBuffer = await fetchResponse.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
-            const base64Content = buffer.toString('base64');
 
             return await this.callGitHub('createOrUpdateFile', {
                 path: targetPath,
                 message: `Upload image ${targetPath}`,
-                content: base64Content
+                content: buffer
             });
         } catch (error) {
             console.error("Error en downloadAndUploadImage:", error);
@@ -150,7 +154,7 @@ export class PublisherPlugin {
     private xmlToJSON(xml: string): any {
         // Un convertidor genérico de XML a JSON (heurístico)
         const result: any = {};
-        
+
         // Limpiar comentarios y CDATA para simplificar
         let cleanXml = xml.replace(/<!--[\s\S]*?-->/g, '');
         cleanXml = cleanXml.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (match, p1) => p1.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
@@ -166,7 +170,7 @@ export class PublisherPlugin {
                 hasChildren = true;
                 const [_, tag, attrs, content] = match;
                 const childValue = process(content);
-                
+
                 if (obj[tag]) {
                     if (!Array.isArray(obj[tag])) obj[tag] = [obj[tag]];
                     obj[tag].push(childValue);
@@ -185,79 +189,159 @@ export class PublisherPlugin {
         return process(cleanXml);
     }
 
-    private async apiVerifySource(payload: { url: string }) {
-        const { url } = payload;
-        if (!url) throw new Error('El parámetro "url" es requerido.');
-        
+    /**
+     * Puente para llamar a otros plugins desde un módulo del Workspace.
+     */
+    private async callOtherPlugin(targetModule: string, targetPlugin: string, action: string, data: any) {
+        if (typeof this.config?._callPlugin !== 'function') {
+            console.error('[Publisher] Error: _callPlugin no está inyectado.');
+            throw new Error('Plugin bridge not available');
+        }
+        return await this.config._callPlugin(targetModule, targetPlugin, action, data);
+    }
+
+    async apiVerifySource(data?: any): Promise<any> {
+        const url = data?.url;
         try {
-            console.log(`[Publisher] Verificando fuente con visión y metadatos: ${url}`);
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-                }
-            });
-            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-            const html = await response.text();
-            
-            let cheerio;
+            if (!url) throw new Error('El parámetro "url" es requerido.');
+
+            console.log(`[Publisher] Verificación PRO iniciada para: ${url}`);
+
+            // 1. Detectar si es una fuente que prefiere OG:Image (ej: GitHub)
+            const useOgImage = this.OG_IMAGE_SITES.some(site => url.includes(site));
+
+            // 2. Intentar extracción profesional vía Tavily
+            let verifyResult: any;
             try {
-                cheerio = require('cheerio');
+                verifyResult = await this.callOtherPlugin('TavilySearch', 'Search', 'search', {
+                    query: url,
+                    search_depth: 'advanced',
+                    include_images: true,
+                    max_results: 1
+                });
             } catch (e) {
-                console.error("[Publisher] cheerio not found in paths:", e);
-                throw new Error("El motor de análisis (cheerio) no está disponible en este entorno. Por favor, contacta al administrador.");
-            }
-            const $ = cheerio.load(html);
-            
-            // Extraer metadatos clave para evitar alucinaciones de fecha
-            const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || '';
-            const description = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '';
-            
-            // Estrategia multi-tag para encontrar la fecha real de publicación
-            const publishDate = $('meta[property="article:published_time"]').attr('content') || 
-                                $('meta[name="pubdate"]').attr('content') || 
-                                $('meta[name="publish-date"]').attr('content') ||
-                                $('meta[name="date"]').attr('content') ||
-                                $('time[datetime]').attr('datetime') || 
-                                $('time').text().trim() || '';
-                                
-            const ogImage = $('meta[property="og:image"]').attr('content') || null;
-            
-            // Intentar detectar fecha en el texto si no hay meta tags (heurística simple)
-            let inferredDate = publishDate;
-            if (!inferredDate) {
-                const dateMatch = html.match(/\d{4}[-/]\d{2}[-/]\d{2}/) || html.match(/\d{1,2} [a-zA-Z]+ \d{4}/);
-                if (dateMatch) inferredDate = `[Detectado en texto]: ${dateMatch[0]}`;
+                console.warn('[Publisher] Tavily falló, intentando WebSearch fallback...');
             }
 
-            const metadata = {
-                title,
-                description,
-                publishDate: inferredDate || "No detectada (Ten cuidado con la antigüedad)",
-                url,
-                hasOgImage: !!ogImage
-            };
+            // Fallback a WebSearch
+            if (!verifyResult || verifyResult.isError) {
+                verifyResult = await this.callOtherPlugin('WebSearch', 'Search', 'search', {
+                    query: url,
+                    max_results: 1
+                });
+            }
 
-            // Si hay imagen, la descargamos para enviarla como parte de visión (Pattern B de Urano)
-            if (ogImage && ogImage.startsWith('http')) {
+            const parts: any[] = [];
+            const metadata = (verifyResult.results?.[0] || verifyResult) || {};
+
+            // Parte 1: Metadatos y Feedback (Siempre Texto)
+            parts.push({
+                type: 'text',
+                text: JSON.stringify({
+                    success: true,
+                    source: url,
+                    verifiedAt: new Date().toISOString(),
+                    title: metadata.title || 'No detectado',
+                    snippet: metadata.content || metadata.snippet || 'No disponible',
+                    status: 'verified_pro'
+                }, null, 2)
+            });
+
+            // Parte 2: Imagen (Captura Real con Electron o OG:Image)
+            let screenshotBase64 = null;
+            const urlObj = new URL(url);
+
+            // Si es un sitio social/dev, preferimos su OG:Image oficial
+            if (useOgImage) {
                 try {
-                    const imgRes = await fetch(ogImage);
-                    if (imgRes.ok) {
-                        const buffer = Buffer.from(await imgRes.arrayBuffer());
-                        return {
-                            metadata,
-                            base64: buffer.toString('base64'),
-                            mimeType: imgRes.headers.get('content-type') || 'image/jpeg'
-                        };
+                    let imageUrl = metadata.image || (verifyResult.images?.[0]);
+                    if (urlObj.hostname.includes('github.com')) {
+                        imageUrl = `https://opengraph.githubassets.com/${Math.random().toString(36).substring(7)}${urlObj.pathname}`;
+                    }
+                    if (imageUrl) {
+                        const imgRes = await fetch(imageUrl);
+                        if (imgRes.ok) {
+                            const buffer = Buffer.from(await imgRes.arrayBuffer());
+                            screenshotBase64 = buffer.toString('base64');
+                            console.log(`[Publisher] OG:Image capturada para ${urlObj.hostname}`);
+                        }
                     }
                 } catch (e) {
-                    console.warn("[Publisher] Falló la descarga de og:image para visión:", e);
+                    console.warn('[Publisher] Falló captura de OG:Image, intentando Electron...');
                 }
             }
 
-            return metadata;
+            // Si no tenemos imagen (o no es sitio social), usamos el motor de renderizado de Electron
+            if (!screenshotBase64) {
+                try {
+                    console.log(`[Publisher] Iniciando Stealth Screenshot para: ${url}`);
+                    const { BrowserWindow } = require('electron');
+                    const win = new BrowserWindow({
+                        width: 1280,
+                        height: 1000,
+                        show: false,
+                        webPreferences: {
+                            offscreen: true,
+                            images: true,
+                            javascript: true
+                        }
+                    });
+
+                    // Timeout de carga de 20s
+                    await Promise.race([
+                        win.loadURL(url),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading page')), 20000))
+                    ]);
+
+                    // Esperar 3s para que termine de renderizar el JS
+                    await new Promise(r => setTimeout(r, 3000));
+
+                    let image = await win.webContents.capturePage();
+                    if (image.getSize().width > 1280) image = image.resize({ width: 1280 });
+                    screenshotBase64 = image.toPNG().toString('base64');
+                    win.destroy();
+                    console.log("[Publisher] Stealth Screenshot completado.");
+                } catch (e: any) {
+                    console.warn(`[Publisher] Falló captura visual de Electron: ${e.message}`);
+                }
+            }
+
+            if (screenshotBase64) {
+                parts.push({
+                    type: 'image',
+                    image: screenshotBase64,
+                    mimeType: 'image/png'
+                });
+            }
+
+            return parts;
+
         } catch (error: any) {
-            console.error("[Publisher] Error en apiVerifySource:", error);
-            return { error: error.message, url };
+            console.error('[Publisher] Error crítico en apiVerifySource:', error);
+
+            // Informe detallado para el LLM ( detective mode )
+            const errorReport = {
+                success: false,
+                url: url,
+                errorType: error.name || 'RuntimeError',
+                message: error.message || 'Error desconocido durante el proceso de verificación.',
+                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+                actionRequired: !url ? 'Proporciona una URL válida.' : 'Verifica si el sitio permite el acceso de bots o intenta con otra fuente.',
+                timestamp: new Date().toISOString()
+            };
+
+            return [
+                {
+                    type: 'text',
+                    text: `❌ ERROR DE VERIFICACIÓN: No se pudo procesar la fuente "${url || 'URL no proporcionada'}".\n\n` +
+                        `Razón detectada: ${errorReport.message}\n` +
+                        `Sugerencia: ${errorReport.actionRequired}`
+                },
+                {
+                    type: 'text',
+                    text: JSON.stringify(errorReport, null, 2)
+                }
+            ];
         }
     }
 
@@ -282,22 +366,22 @@ export class PublisherPlugin {
                 const response = await fetch(source.url);
                 if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                 const text = await response.text();
-                
+
                 let content: any = text;
                 const pIndex = Math.max(1, parseInt(page, 10));
                 const pSize = parseInt(pageSize, 10);
-                
+
                 // Si es XML, lo convertimos y paginamos si es una lista
                 if (text.trim().startsWith('<?xml') || text.includes('<rss') || text.includes('<feed') || text.includes('</')) {
                     try {
                         const parsed = this.xmlToJSON(text);
-                        
+
                         // Intentar encontrar la lista de items principal para paginar
                         // RSS: channel.item, Atom: feed.entry
                         let items = [];
                         if (parsed.rss?.channel?.item) items = Array.isArray(parsed.rss.channel.item) ? parsed.rss.channel.item : [parsed.rss.channel.item];
                         else if (parsed.feed?.entry) items = Array.isArray(parsed.feed.entry) ? parsed.feed.entry : [parsed.feed.entry];
-                        
+
                         if (items.length > 0) {
                             const start = (pIndex - 1) * pSize;
                             const paginatedItems = items.slice(start, start + pSize);
@@ -348,49 +432,75 @@ export class PublisherPlugin {
         const rawCategories = payload.categories || (Array.isArray(payload.tags) ? payload.tags.join(',') : payload.tags) || "";
         const excerpt = payload.excerpt || payload.summary || "";
         const content = payload.content || payload.body || "";
-        const imageUrl = payload.imageUrl || payload.image || null;
+        let imageUrl = payload.imageUrl || payload.image || null;
         const source = payload.source || (Array.isArray(payload.sourceUrls) ? payload.sourceUrls[0] : payload.sourceUrls) || "";
         const originalUrl = payload.originalUrl || payload.url || source;
 
         let localImageUrl = null;
 
         if (imageUrl) {
-            // Descargar imagen y subir al repo
-            const filename = `${Date.now()}-${imageUrl.split('/').pop()?.split('?')[0] || 'image.jpg'}`;
-            const targetPath = `assets/images/${filename}`;
-            await this.downloadAndUploadImage(imageUrl, targetPath);
-            localImageUrl = `/${targetPath}`;
+            try {
+                // Descargar imagen y subir al repo (este paso es costoso pero se puede hacer antes del fetch de posts.json)
+                const filename = `${Date.now()}-${imageUrl.split('/').pop()?.split('?')[0] || 'image.jpg'}`;
+                const targetPath = `assets/images/${filename}`;
+                await this.downloadAndUploadImage(imageUrl, targetPath);
+                localImageUrl = `/${targetPath}`;
+            } catch (imgError) {
+                console.warn("[Publisher] No se pudo procesar la imagen, se publicará sin ella:", imgError);
+                localImageUrl = null;
+                imageUrl = null; // Forzamos que sea null para que no use la remota como fallback
+            }
         }
 
-        // Obtenemos los posts actuales
-        const { posts, sha } = await this.getPostsJson();
+        let attempts = 0;
+        const maxAttempts = 3;
 
-        // Creamos el nuevo post
-        const newPost = {
-            id: Date.now().toString(),
-            title,
-            date,
-            categories: typeof rawCategories === 'string' ? rawCategories.split(',').map((c: string) => c.trim().toLowerCase()) : [],
-            excerpt,
-            content,
-            imageUrl: localImageUrl || imageUrl, // usa local si se descargó, o la remota como fallback
-            source,
-            originalUrl
-        };
+        while (attempts < maxAttempts) {
+            try {
+                // Obtenemos los posts actuales (DEBE estar dentro del loop para re-intentar con SHA fresco)
+                const { posts, sha } = await this.getPostsJson();
 
-        // Añadimos al inicio
-        posts.unshift(newPost);
+                // Creamos el nuevo post
+                const newPost = {
+                    id: Date.now().toString(),
+                    title,
+                    date,
+                    categories: typeof rawCategories === 'string' ? rawCategories.split(',').map((c: string) => c.trim().toLowerCase()) : [],
+                    excerpt,
+                    content,
+                    imageUrl: localImageUrl || imageUrl,
+                    source,
+                    originalUrl
+                };
 
-        // Guardamos
-        await this.savePostsJson(posts, sha);
+                // Añadimos al inicio
+                posts.unshift(newPost);
 
-        const siteUrl = `https://${this.REPO_OWNER}.github.io/${this.REPO_NAME}`;
+                // Guardamos
+                await this.savePostsJson(posts, sha);
 
-        return {
-            success: true,
-            message: `Post "${title}" publicado correctamente.`,
-            siteUrl: siteUrl,
-            post: newPost
-        };
+                const siteUrl = `https://${this.REPO_OWNER}.github.io/${this.REPO_NAME}`;
+
+                return {
+                    success: true,
+                    message: `Post "${title}" publicado correctamente.${attempts > 0 ? ` (En el intento ${attempts + 1})` : ''}`,
+                    siteUrl: siteUrl,
+                    post: newPost
+                };
+            } catch (error: any) {
+                const isConflict = error.message.includes('Conflict') || error.message.includes('sha');
+
+                if (isConflict && attempts < maxAttempts - 1) {
+                    attempts++;
+                    const delay = 1000 + Math.random() * 2000;
+                    console.log(`Conflicto de SHA detectado al publicar "${title}". Reintentando en ${Math.round(delay)}ms... (Intento ${attempts})`);
+                    await this.sleep(delay);
+                    continue;
+                }
+
+                console.error(`Error final al publicar post "${title}":`, error);
+                throw error;
+            }
+        }
     }
 }
