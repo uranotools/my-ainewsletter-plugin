@@ -21,6 +21,7 @@ export class PublisherPlugin {
         if (action === 'apiGetPublisherConfig') return await this.apiGetPublisherConfig();
         if (action === 'apiFetchSources') return await this.apiFetchSources(payload);
         if (action === 'apiVerifySource') return await this.apiVerifySource(payload);
+        if (action === 'apiDownloadAndUploadImage') return await this.apiDownloadAndUploadImage(payload);
         throw new Error(`Action ${action} no encontrada`);
     }
 
@@ -104,7 +105,17 @@ export class PublisherPlugin {
         return await this.callGitHub('createOrUpdateFile', payload);
     }
 
-    private async downloadAndUploadImage(imageUrl: string, targetPath: string) {
+    private async apiDownloadAndUploadImage(payload: any) {
+        const { imageUrl, targetPath } = payload;
+        if (!imageUrl) throw new Error('El parámetro "imageUrl" es requerido.');
+        
+        // Si no se especifica targetPath, generamos uno por defecto
+        let finalPath = targetPath;
+        if (!finalPath) {
+            const filename = `${Date.now()}-${imageUrl.split('/').pop()?.split('?')[0] || 'image.jpg'}`;
+            finalPath = `assets/images/${filename}`;
+        }
+
         try {
             const fetchResponse = await fetch(imageUrl);
             if (!fetchResponse.ok) {
@@ -114,14 +125,21 @@ export class PublisherPlugin {
             const arrayBuffer = await fetchResponse.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
 
-            return await this.callGitHub('createOrUpdateFile', {
-                path: targetPath,
-                message: `Upload image ${targetPath}`,
-                content: buffer
+            await this.callGitHub('createOrUpdateFile', {
+                path: finalPath,
+                message: `Upload image ${finalPath}`,
+                content: buffer.toString('binary')
             });
-        } catch (error) {
-            console.error("Error en downloadAndUploadImage:", error);
-            throw error;
+
+            return {
+                success: true,
+                remoteUrl: imageUrl,
+                localUrl: `/${finalPath}`,
+                path: finalPath
+            };
+        } catch (error: any) {
+            console.error("Error en apiDownloadAndUploadImage:", error);
+            throw new Error(`No se pudo subir la imagen: ${error.message}`);
         }
     }
 
@@ -152,7 +170,7 @@ export class PublisherPlugin {
     }
 
     private xmlToJSON(xml: string): any {
-        // Un convertidor genérico de XML a JSON (heurístico)
+        // Un convertidor genérico de XML a JSON (heurístico) mejorado para atributos comunes de imágenes
         const result: any = {};
 
         // Limpiar comentarios y CDATA para simplificar
@@ -162,14 +180,29 @@ export class PublisherPlugin {
         // Función recursiva para procesar tags
         const process = (str: string) => {
             const obj: any = {};
-            const tagRegex = /<([^>/\s]+)([^>]*)>([\s\S]*?)<\/\1>/g;
+            const tagRegex = /<([^>/\s]+)([^>]*)>([\s\S]*?)<\/\1>|<([^>/\s]+)([^>]*)\/>/g;
             let match;
             let hasChildren = false;
 
             while ((match = tagRegex.exec(str)) !== null) {
                 hasChildren = true;
-                const [_, tag, attrs, content] = match;
-                const childValue = process(content);
+                const tag = match[1] || match[4];
+                const attrs = match[2] || match[5];
+                const content = match[3];
+
+                let childValue: any = content !== undefined ? process(content) : {};
+
+                // Capturar atributos comunes (url, href, src) si el objeto está vacío o es un string
+                if (attrs) {
+                    const attrRegex = /(url|href|src|type)="([^"]*)"/gi;
+                    let attrMatch;
+                    while ((attrMatch = attrRegex.exec(attrs)) !== null) {
+                        if (typeof childValue === 'string') {
+                            childValue = { _text: childValue };
+                        }
+                        childValue[attrMatch[1].toLowerCase()] = attrMatch[2];
+                    }
+                }
 
                 if (obj[tag]) {
                     if (!Array.isArray(obj[tag])) obj[tag] = [obj[tag]];
@@ -180,7 +213,6 @@ export class PublisherPlugin {
             }
 
             if (!hasChildren) {
-                // Si no tiene hijos, devolver el texto limpio de HTML
                 return str.replace(/<[^>]*>?/gm, '').trim();
             }
             return obj;
@@ -206,6 +238,7 @@ export class PublisherPlugin {
             if (!url) throw new Error('El parámetro "url" es requerido.');
 
             console.log(`[Publisher] Verificación PRO iniciada para: ${url}`);
+            const urlObj = new URL(url);
 
             // 1. Detectar si es una fuente que prefiere OG:Image (ej: GitHub)
             const useOgImage = this.OG_IMAGE_SITES.some(site => url.includes(site));
@@ -235,6 +268,13 @@ export class PublisherPlugin {
             const metadata = (verifyResult.results?.[0] || verifyResult) || {};
 
             // Parte 1: Metadatos y Feedback (Siempre Texto)
+            let foundImageUrl = metadata.image || (verifyResult.images?.[0]);
+            
+            // Especialización para GitHub
+            if (!foundImageUrl && urlObj.hostname.includes('github.com')) {
+                foundImageUrl = `https://opengraph.githubassets.com/${Math.random().toString(36).substring(7)}${urlObj.pathname}`;
+            }
+
             parts.push({
                 type: 'text',
                 text: JSON.stringify({
@@ -243,28 +283,23 @@ export class PublisherPlugin {
                     verifiedAt: new Date().toISOString(),
                     title: metadata.title || 'No detectado',
                     snippet: metadata.content || metadata.snippet || 'No disponible',
+                    imageUrl: foundImageUrl || null,
                     status: 'verified_pro'
                 }, null, 2)
             });
 
             // Parte 2: Imagen (Captura Real con Electron o OG:Image)
             let screenshotBase64 = null;
-            const urlObj = new URL(url);
+            let screenshotBuffer: Buffer | null = null;
 
             // Si es un sitio social/dev, preferimos su OG:Image oficial
-            if (useOgImage) {
+            if (useOgImage && foundImageUrl && !foundImageUrl.startsWith('/')) {
                 try {
-                    let imageUrl = metadata.image || (verifyResult.images?.[0]);
-                    if (urlObj.hostname.includes('github.com')) {
-                        imageUrl = `https://opengraph.githubassets.com/${Math.random().toString(36).substring(7)}${urlObj.pathname}`;
-                    }
-                    if (imageUrl) {
-                        const imgRes = await fetch(imageUrl);
-                        if (imgRes.ok) {
-                            const buffer = Buffer.from(await imgRes.arrayBuffer());
-                            screenshotBase64 = buffer.toString('base64');
-                            console.log(`[Publisher] OG:Image capturada para ${urlObj.hostname}`);
-                        }
+                    const imgRes = await fetch(foundImageUrl);
+                    if (imgRes.ok) {
+                        screenshotBuffer = Buffer.from(await imgRes.arrayBuffer());
+                        screenshotBase64 = screenshotBuffer.toString('base64');
+                        console.log(`[Publisher] OG:Image capturada para ${urlObj.hostname}`);
                     }
                 } catch (e) {
                     console.warn('[Publisher] Falló captura de OG:Image, intentando Electron...');
@@ -298,11 +333,39 @@ export class PublisherPlugin {
 
                     let image = await win.webContents.capturePage();
                     if (image.getSize().width > 1280) image = image.resize({ width: 1280 });
-                    screenshotBase64 = image.toPNG().toString('base64');
+                    screenshotBuffer = image.toPNG();
+                    screenshotBase64 = screenshotBuffer.toString('base64');
                     win.destroy();
                     console.log("[Publisher] Stealth Screenshot completado.");
                 } catch (e: any) {
                     console.warn(`[Publisher] Falló captura visual de Electron: ${e.message}`);
+                }
+            }
+
+            // Fallback Crítico: Si no había imageUrl remota pero tenemos captura, guardamos la captura y la usamos como imageUrl
+            if (!foundImageUrl && screenshotBuffer) {
+                try {
+                    const filename = `capture-${Date.now()}.png`;
+                    const targetPath = `assets/images/captures/${filename}`;
+                    
+                    await this.callGitHub('createOrUpdateFile', {
+                        path: targetPath,
+                        message: `Upload automated capture for ${url}`,
+                        content: screenshotBuffer.toString('binary')
+                    });
+                    
+                    foundImageUrl = `/${targetPath}`;
+                    
+                    // Actualizamos la parte de texto para que el agente vea la nueva URL
+                    const textPart = parts.find(p => p.type === 'text');
+                    if (textPart) {
+                        const json = JSON.parse(textPart.text);
+                        json.imageUrl = foundImageUrl;
+                        json.imageSource = 'stealth-capture';
+                        textPart.text = JSON.stringify(json, null, 2);
+                    }
+                } catch (e) {
+                    console.error("[Publisher] Error guardando captura de fallback:", e);
                 }
             }
 
@@ -426,30 +489,36 @@ export class PublisherPlugin {
     }
 
     private async apiPublishPost(payload: any) {
+        // Soporte robusto: si el agente envía un objeto 'post', lo usamos como fuente
+        const data = payload.post || payload;
+
         // Mapeo robusto de parámetros (el LLM a veces usa sinónimos)
-        const title = payload.title;
-        const date = payload.date || payload.publishedAt || new Date().toISOString().split('T')[0];
-        const rawCategories = payload.categories || (Array.isArray(payload.tags) ? payload.tags.join(',') : payload.tags) || "";
-        const excerpt = payload.excerpt || payload.summary || "";
-        const content = payload.content || payload.body || "";
-        let imageUrl = payload.imageUrl || payload.image || null;
-        const source = payload.source || (Array.isArray(payload.sourceUrls) ? payload.sourceUrls[0] : payload.sourceUrls) || "";
-        const originalUrl = payload.originalUrl || payload.url || source;
+        const title = data.title;
+        const date = data.date || data.publishedAt || new Date().toISOString().split('T')[0];
+        const rawCategories = data.categories || (Array.isArray(data.tags) ? data.tags.join(',') : data.tags) || "";
+        const excerpt = data.excerpt || data.summary || "";
+        const content = data.content || data.body || "";
+        const imageUrl = data.imageUrl || data.image || null;
+        const source = data.source || (Array.isArray(data.sourceUrls) ? data.sourceUrls[0] : data.sourceUrls) || "";
+        const originalUrl = data.originalUrl || data.url || source;
 
-        let localImageUrl = null;
-
-        if (imageUrl) {
-            try {
-                // Descargar imagen y subir al repo (este paso es costoso pero se puede hacer antes del fetch de posts.json)
-                const filename = `${Date.now()}-${imageUrl.split('/').pop()?.split('?')[0] || 'image.jpg'}`;
-                const targetPath = `assets/images/${filename}`;
-                await this.downloadAndUploadImage(imageUrl, targetPath);
-                localImageUrl = `/${targetPath}`;
-            } catch (imgError) {
-                console.warn("[Publisher] No se pudo procesar la imagen, se publicará sin ella:", imgError);
-                localImageUrl = null;
-                imageUrl = null; // Forzamos que sea null para que no use la remota como fallback
-            }
+        // Validación inteligente de campos obligatorios
+        if (!title || title.trim() === '' || title === 'undefined' || !content || content.trim() === '') {
+            return {
+                success: false,
+                message: "❌ ERROR DE VALIDACIÓN: Faltan campos obligatorios o el formato es incorrecto. El título no puede ser 'undefined' y el contenido no puede estar vacío.",
+                instructions: "Asegúrate de proporcionar un objeto JSON completo y bien formado.",
+                example: {
+                    title: "Claude 3.5 Sonnet: El nuevo estándar en IA",
+                    date: new Date().toISOString().split('T')[0],
+                    categories: "ia, anthropic, modelos",
+                    excerpt: "Un breve resumen de la noticia...",
+                    content: "Aquí va el cuerpo completo en Markdown...",
+                    imageUrl: imageUrl || "/assets/images/captures/ejemplo.png",
+                    source: "Anthropic News",
+                    originalUrl: originalUrl || "https://..."
+                }
+            };
         }
 
         let attempts = 0;
@@ -468,7 +537,7 @@ export class PublisherPlugin {
                     categories: typeof rawCategories === 'string' ? rawCategories.split(',').map((c: string) => c.trim().toLowerCase()) : [],
                     excerpt,
                     content,
-                    imageUrl: localImageUrl || imageUrl,
+                    imageUrl, // Usamos la URL tal cual viene (el agente debe haberla subido previamente si quería una local)
                     source,
                     originalUrl
                 };

@@ -1,8 +1,8 @@
 ---
 name: UranoNewsPublisher
 description: Publicador autónomo de AI News en GitHub Pages
-tools: [urano_uranonewspublisher_publisher_setuprepository, urano_uranonewspublisher_publisher_publishpost, urano_uranonewspublisher_publisher_getlatestposts, urano_uranonewspublisher_publisher_getpublisherconfig, urano_uranonewspublisher_publisher_fetchsources, urano_uranonewspublisher_publisher_downloadanduploadimage, urano_uranonewspublisher_publisher_verifysource]
 type: mcp
+tools: [urano_uranonewspublisher_publisher_setuprepository, urano_uranonewspublisher_publisher_publishpost, urano_uranonewspublisher_publisher_getlatestposts, urano_uranonewspublisher_publisher_getpublisherconfig, urano_uranonewspublisher_publisher_fetchsources, urano_uranonewspublisher_publisher_downloadanduploadimage, urano_uranonewspublisher_publisher_verifysource]
 ---
 
 # Skill: Urano News Publisher & Periodista Autónomo
@@ -31,19 +31,25 @@ Este módulo te otorga la capacidad de publicar automáticamente noticias en Git
    - Usa `pageSize` (por defecto 10) para controlar cuántos elementos procesas por turno y evitar saturar tu ventana de contexto.
 4. **Verificación de Fecha y Visión (Anti-Anacronismos)**:
    - **Obligatorio**: Antes de redactar, usa `urano_uranonewspublisher_publisher_verifysource` con la URL de la noticia.
-   - Esta herramienta te devolverá la fecha de publicación real (metadata) y la imagen principal del artículo (`og:image`). 
-   - **Multimodalidad**: Si tu modelo soporta visión, podrás "ver" la imagen de la noticia para corroborar su autenticidad y estilo.
-   - **Regla Estricta**: Si la fecha detectada es superior a 48 horas (y no es un análisis atemporal relevante), DESCARTA la noticia. No publiques noticias viejas como si fueran de hoy.
-5. **Validación de Enlaces**: Usa `urano_verify_link` para confirmar que la URL sigue viva antes de citarla.
-6. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada, reciente y tiene un puntaje de relevancia `>= minScore`.
+   - **Metadatos e Imagen**: Esta herramienta te devolverá la fecha real y el `imageUrl` (OG:Image o captura). 
+   - **Detección de Imagen**: Si `imageUrl` es nulo, intenta buscar una imagen manualmente en los resultados de `fetchSources` (revisa los campos `url` o `src` en los items).
+   - **Regla Estricta**: Si la fecha detectada es superior a 48 horas (y no es un análisis atemporal relevante), DESCARTA la noticia.
+
+5. **Centralización de Imágenes (Upload First)**:
+   - Una vez que tengas el `imageUrl` de la noticia, **DEBES** llamar a `urano_uranonewspublisher_publisher_downloadanduploadimage`.
+   - Esta herramienta descargará la imagen y la subirá a tu repositorio, devolviéndote una `localUrl` (ej: `/assets/images/123.jpg`).
+   - **Beneficio**: Esto evita enlaces rotos y asegura que tu newsletter tenga activos propios.
+
+6. **Validación de Enlaces**: Usa `urano_verify_link` para confirmar que la URL sigue viva antes de citarla.
+7. **Evaluación de Impacto**: Solo avanza si la noticia es real, verificada, reciente y tiene un puntaje de relevancia `>= minScore`.
 
 ## 📝 Proceso de Publicación (`publishPost`)
 
-1. **Redacción Previa**: Crea y estructura el post en tu "mente" (boceto) antes de llamar a la acción. Debes tener el título, extracto, contenido Markdown completo, y categorías listos.
+1. **Redacción Previa**: Crea y estructura el post en tu "mente" (boceto) antes de llamar a la acción.
 2. **Formato Estricto**: 
    - Usa siempre la fecha actual en formato `YYYY-MM-DD`.
    - Las categorías deben estar en minúsculas y separadas por comas.
-   - Si encontraste o generaste una imagen relevante, pásala por `imageUrl`.
+   - **Imagen Local**: En el campo `imageUrl`, utiliza la `localUrl` que obtuviste en el paso de `downloadAndUploadImage`.
 3. **Ejecución**: Llama a `publishPost` **una sola vez** por ciclo de noticias. No satures el repositorio.
 
 ## Ejemplo de Payload para publishPost:

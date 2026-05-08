@@ -75,11 +75,11 @@ export const UranoNewsPublisherConfig = {
                     ]
                 },
                 downloadAndUploadImage: {
-                    label: '🖼️ Descargar y Subir Imagen',
-                    description: 'Descarga una imagen desde una URL y la sube al repositorio de GitHub en la carpeta assets/images.',
+                    label: '🖼️ Descargar y Subir Imagen (Recomendado)',
+                    description: 'Descarga una imagen remota y la sube al repositorio de GitHub. Devuelve la URL local. Úsalo ANTES de publicar para asegurar que la imagen persista en tu blog.',
                     fields: [
                         { name: 'imageUrl', type: 'required', label: 'URL remota de la imagen' },
-                        { name: 'targetPath', type: 'required', label: 'Ruta de destino en el repo (ej: assets/images/foto.jpg)' }
+                        { name: 'targetPath', type: 'text', label: 'Ruta de destino (Opcional, ej: assets/images/post1.jpg)' }
                     ]
                 }
             }
