@@ -1,1 +1,7 @@
 .trash
+node_modules
+dist
+.bin
+*.log
+.env
+test

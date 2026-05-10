@@ -2,5 +2,16 @@
   "name": "UranoNewsPublisher",
   "version": "1.0.0",
   "description": "Publicador autónomo de newsletters",
-  "main": "config.js"
+  "main": "config.js",
+  "scripts": {
+    "deploy": "npx esbuild config.ts Plugins/**/*.ts --bundle --platform=node --outdir=dist --format=cjs --external:@core/*",
+    "build": "npm install --save-dev esbuild",
+    "urano-launch": "powershell -Command \"Compress-Archive -Path dist\\* -DestinationPath ($env:npm_package_name + '.zip') -Force\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  },
+  "dependencies": {
+    "zlib": "^1.0.5"
+  }
 }

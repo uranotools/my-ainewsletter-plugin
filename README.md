@@ -66,6 +66,27 @@ Gracias a la flexibilidad de Urano, puedes configurar diferentes agentes para di
 
 ---
 
+## 🛠️ Comandos de Desarrollo
+
+Si eres desarrollador, puedes utilizar los siguientes comandos para gestionar el ciclo de vida del plugin:
+
+*   **`npm run build`**: Instala `esbuild` y prepara el entorno de desarrollo.
+*   **`npm run deploy`**: Compila y empaqueta el plugin en la carpeta `dist/`.
+*   **`npm run urano-launch`**: Comprime el contenido de `dist/` en un archivo `.zip` listo para su distribución.
+
+---
+
+## 📚 Documentación y Recursos
+
+Para profundizar en el desarrollo de plugins para Urano, consulta los siguientes recursos:
+
+*   🌐 **Documentación Oficial**: [uranoai.com/documentation](https://uranoai.com/documentation)
+*   🤖 **Herramienta para IA (llms.txt)**: [uranoai.com/llms.txt](https://uranoai.com/llms.txt)
+*   📦 **Guía de Distribución**: [Plugin Distribution Guide](https://uranoai.com/documentation/plugin-distribution_en.md)
+*   🛠️ **Plugins SDK & Debugging**: [Plugins SDK Guide](https://uranoai.com/documentation/plugins-sdk_en.md)
+
+---
+
 ## 🚀 Instalación en Urano
 
 1.  Clona este repositorio o descarga el ZIP.
