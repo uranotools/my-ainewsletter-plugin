@@ -128,7 +128,8 @@ export class PublisherPlugin {
             await this.callGitHub('createOrUpdateFile', {
                 path: finalPath,
                 message: `Upload image ${finalPath}`,
-                content: buffer.toString('binary')
+                content: buffer.toString('base64'),
+                encoding: 'base64'
             });
 
             return {
@@ -351,7 +352,8 @@ export class PublisherPlugin {
                     await this.callGitHub('createOrUpdateFile', {
                         path: targetPath,
                         message: `Upload automated capture for ${url}`,
-                        content: screenshotBuffer.toString('binary')
+                        content: screenshotBuffer.toString('base64'),
+                        encoding: 'base64'
                     });
                     
                     foundImageUrl = `/${targetPath}`;
