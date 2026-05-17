@@ -38,10 +38,27 @@ El plugin no funciona de forma aislada, sino que actúa como un puente inteligen
 
 1.  **Investigación**: El Agente utiliza sus herramientas de búsqueda (o las `SOURCES` configuradas) para encontrar noticias relevantes.
 2.  **Procesamiento**: El Agente redacta el post siguiendo el tono configurado en su System Prompt.
-3.  **Publicación**: Se invoca la acción `publishPost`, la cual:
+3.  **Publicación**: Se invoca la acción `publishPost`, la cual implementa la arquitectura "Un archivo por Post":
     *   Descarga imágenes externas y las sube al repositorio de GitHub (`assets/images/`).
-    *   Actualiza el archivo central de datos `data/posts.json` mediante el **GitHub MCP** de Urano.
+    *   Guarda el post completo (con contenido Markdown) en su propio archivo individual `data/posts/[id].json`.
+    *   Actualiza un archivo índice ultra-ligero `data/posts.json` únicamente con los metadatos, garantizando alta velocidad de lectura.
     *   Retorna la URL final del sitio para confirmar la publicación.
+
+```mermaid
+sequenceDiagram
+    participant Agent as Agente IA
+    participant Plugin as PublisherPlugin
+    participant Github as GitHub Repo
+    participant Frontend as Frontend Web
+    
+    Agent->>Plugin: publishPost(title, content, image)
+    Plugin->>Github: 1. Guarda imagen (assets/images/)
+    Plugin->>Github: 2. Guarda post completo (posts/1234.json)
+    Plugin->>Github: 3. Añade metadatos al índice (posts.json)
+    Plugin-->>Agent: Retorna URL de éxito
+    Frontend->>Github: Carga índice (posts.json)
+    Frontend->>Github: Carga contenido (posts/1234.json) solo al leer
+```
 4.  **Ciclo Autónomo**: Mediante la instrucción `schedule_next_action` definida en el `SKILL.md`, el agente se reprograma para su próxima jornada laboral sin intervención humana.
 
 ---
@@ -60,7 +77,7 @@ Gracias a la flexibilidad de Urano, puedes configurar diferentes agentes para di
 ## 🛠️ Datos Técnicos para Desarrolladores
 
 *   **Integración GitHub**: Este plugin requiere que el módulo **GitHub MCP** esté instalado y configurado en Urano Desktop. Utiliza el puente dinámico `pm.executeAction('GitHub', ...)` para evitar manejar tokens de forma manual.
-*   **Almacenamiento**: Los posts se guardan en un array JSON. Esto facilita el consumo desde cualquier frontend (React, Vue, Astro) que simplemente lea un archivo estático.
+*   **Almacenamiento Escalable**: Implementa una arquitectura estática de "Un archivo por Post". El archivo central `posts.json` funciona como un índice ligero (solo metadatos). El contenido pesado en Markdown se guarda en archivos JSON individuales. Esto evita congelamientos de UI y permite que cualquier frontend (React, Astro) cargue listas de posts al instante y escale de forma ilimitada.
 *   **Imágenes**: El plugin maneja la persistencia de imágenes convirtiéndolas a `base64` durante la subida para asegurar que el contenido nunca se rompa por enlaces externos caídos.
 *   **Hooks de Urano**: Utiliza el protocolo de `type: mcp` en `SKILL.md` para inyectar las reglas de periodismo directamente en el contexto del agente.
 
