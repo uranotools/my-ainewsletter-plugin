@@ -128,8 +128,7 @@ export class PublisherPlugin {
             await this.callGitHub('createOrUpdateFile', {
                 path: finalPath,
                 message: `Upload image ${finalPath}`,
-                content: buffer.toString('base64'),
-                encoding: 'base64'
+                content: new Uint8Array(arrayBuffer)
             });
 
             return {
@@ -352,8 +351,7 @@ export class PublisherPlugin {
                     await this.callGitHub('createOrUpdateFile', {
                         path: targetPath,
                         message: `Upload automated capture for ${url}`,
-                        content: screenshotBuffer.toString('base64'),
-                        encoding: 'base64'
+                        content: new Uint8Array(screenshotBuffer.buffer, screenshotBuffer.byteOffset, screenshotBuffer.byteLength)
                     });
                     
                     foundImageUrl = `/${targetPath}`;
@@ -531,7 +529,7 @@ export class PublisherPlugin {
                 // Obtenemos los posts actuales (DEBE estar dentro del loop para re-intentar con SHA fresco)
                 const { posts, sha } = await this.getPostsJson();
 
-                // Creamos el nuevo post
+                // Creamos el nuevo post con todos los datos
                 const newPost = {
                     id: Date.now().toString(),
                     title,
@@ -544,10 +542,21 @@ export class PublisherPlugin {
                     originalUrl
                 };
 
-                // Añadimos al inicio
-                posts.unshift(newPost);
+                // 1. Guardamos el archivo individual del post PRIMERO
+                await this.callGitHub('createOrUpdateFile', {
+                    path: `public/data/posts/${newPost.id}.json`,
+                    message: `Create full post ${newPost.id}`,
+                    content: JSON.stringify(newPost, null, 2)
+                });
 
-                // Guardamos
+                // 2. Creamos la versión ligera (metadatos) para el index
+                const lightweightPost = { ...newPost };
+                delete (lightweightPost as any).content; // Quitamos el contenido pesado
+
+                // Añadimos al inicio del index
+                posts.unshift(lightweightPost);
+
+                // Guardamos el índice
                 await this.savePostsJson(posts, sha);
 
                 const siteUrl = `https://${this.REPO_OWNER}.github.io/${this.REPO_NAME}`;
